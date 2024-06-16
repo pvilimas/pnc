@@ -481,21 +481,12 @@ func_arg_count, func_ret_type, ...) \
 // starts child proc (if true), writes value to shared memory, kills child
 void eval_pnc_expr(char* input, bool spawn_child_proc);
 
-// result of a child process
-typedef struct {
-	int retval;
-	char str[1000];
-} ChildProcResult;
-
 // repl stuff - manages everything else
 
 typedef struct {
 
 	// should always be true
 	bool is_running;
-
-	// shared memory using mmap
-	ChildProcResult* result;
 
 } REPLContext;
 
@@ -559,6 +550,7 @@ ErrorString CPRV_ERROR_NAMES[RV_N] = (ErrorString[]){
 	// : argument #1 of function '+' is type list, expected num
 	// : function '+' got 3 arguments, expected 2
 	// : argument #2 of function '%' is %lf, expected an integer
+	// : a list can only contain numbers
 
 	[RV_DIVIDE_BY_ZERO_ERROR] = "divide by zero error",
 	// : argument #2 of function '%' cannot be 0
@@ -578,17 +570,16 @@ ErrorString CPRV_ERROR_NAMES[RV_N] = (ErrorString[]){
 	[RV_OTHER_ERROR] = "internal error",
 	// : something bad happened on line %d
 
-	[RV_NONE] = "internal error",
 	// the fact that this is even being printed is an error
 	// so it can be treated like an internal error
+	[RV_NONE] = "internal error",
 	// : something REALLY bad happened on line %d
 };
 
 // print value and exit
 #define childproc_return(v) \
 	do { \
-		printf("%s\n", stringify_value(v)); \
-		ctx.result->retval = RV_OK; \
+		printf("= %s\n", stringify_value(v)); \
 		exit(RV_OK); \
 	} while(0)
 
@@ -598,7 +589,6 @@ ErrorString CPRV_ERROR_NAMES[RV_N] = (ErrorString[]){
 		printf("= %s: " fmt "\n", \
 			CPRV_ERROR_NAMES[(rv)] \
 			__VA_OPT__(,) __VA_ARGS__); \
-		ctx.result->retval = (rv); \
 		exit(rv); \
 	} while(0)
 

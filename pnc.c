@@ -63,14 +63,6 @@ int main(int argc, char** argv) {
 
 	rt_init();
 
-	// init shared memory
-	ctx.result = mmap(NULL,
-		sizeof(ChildProcResult),
-		PROT_READ | PROT_WRITE,
-		MAP_SHARED | MAP_ANONYMOUS,
-		-1, 0);
-
-	memset(ctx.result, 0, sizeof(ChildProcResult));
 	ctx.is_running = true;
 
 	if (argc == 3) {
@@ -236,9 +228,18 @@ bool num_from_str(char* str, int len, Number* out) {
 }
 
 char* num_to_str(Number n) {
-	int num_bytes = snprintf(NULL, 0, "%lf", n.value);
-	char* buf = malloc(num_bytes + 1);
-	snprintf(buf, num_bytes, "%lf", n.value);
+
+	char* buf;
+	int num_bytes;
+	if (n.type == NUM_INT) {
+		num_bytes = snprintf(NULL, 0, "%d", (int)n.value);
+		buf = malloc(num_bytes + 1);
+		snprintf(buf, num_bytes, "%d", (int)n.value);
+	} else {
+		num_bytes = snprintf(NULL, 0, "%lf", n.value);
+		buf = malloc(num_bytes + 1);
+		snprintf(buf, num_bytes, "%lf", n.value);
+	}
 	return buf;
 }
 
@@ -259,7 +260,7 @@ Number num_div(Number n1, Number n2) {
 		childproc_panic(RV_DIVIDE_BY_ZERO_ERROR, "argument #2 of function '/' cannot be 0");
 	}
 
-	return num(n1.value + n2.value);
+	return num(n1.value / n2.value);
 }
 
 Number num_mod(Number n1, Number n2) {
@@ -665,7 +666,16 @@ Value e_func_list(struct Expr* e) {
 	}
 
 	for (int i = 0; i < e->funccall.num_args_passed; i++) {
-		Value list_item = try_eval_arg_as_type(e, i, V_NUM);
+
+		// manually doing try_eval_arg_as_type to print a specific msg
+
+		Value list_item = eval(e->funccall.args[i]);
+
+		if (list_item.type == V_LIST) {
+			childproc_panic(RV_VALUE_ERROR,
+				"a list cannot contain another list");
+		}
+
 		nl_append(result, list_item.number_value);
 	}
 	
@@ -801,6 +811,7 @@ void rt_init() {
 
 	rt_add_constant("#false", (Value){.type=V_NUM, .number_value=num(0)});
 	rt_add_constant("#true", (Value){.type=V_NUM, .number_value=num(1)});
+	rt_add_constant("#pi", (Value){.type=V_NUM, .number_value=num(3.1415926536)});
 
 	RT_BUILTIN_FUNCTIONS = rt_fnlist_new();
 
@@ -841,9 +852,9 @@ void eval_pnc_expr(char* input, bool spawn_child_proc) {
 			return;
 
 		} else if (pid < 0) {
-			// fork error, ignore
-			// since the child proc wasn't spawned just simulate error
-			ctx.result->retval = RV_MEMORY_ERROR;
+
+			// fork error
+
 			fputs("= ", stdout);
 			fputs(CPRV_ERROR_NAMES[RV_MEMORY_ERROR], stdout);
 			fputs(": process creation failed, try again\n", stdout);
@@ -898,10 +909,6 @@ void repl_once(char* prog) {
 	// or read from stdin
 	else {
 
-		// clear the state
-		memset(ctx.result->str, 0, 1000);
-		ctx.result->retval = RV_NONE;
-
 		char* buffer = NULL;
 		size_t size = 0;
 
@@ -920,7 +927,6 @@ void repl_once(char* prog) {
 
 // main process exit
 void repl_quit() {
-	munmap(ctx.result, sizeof(ChildProcResult));
 	free(RT_CONSTANT_VARS.vars);
 	free(RT_BUILTIN_FUNCTIONS.fns);
 	exit(RV_OK);
