@@ -2,36 +2,37 @@
 
 /*
 	TODO
-	- make sure parens are balanced and token list is well formed
-	- ast edge cases?
-	- "or" and "and" functions for list of bools
-	- remaining math+comparison functions
-	- string types and string literals
-	- runtime and variables
+	- variables
+	- custom function definitions
 	- reading from a file/command line interface and help messages
-	- repl mode
-	- better error messages
 
 	language currently supports:
 
 	- builtin types:
 		- numbers
-			- booleans are 0 and 1
+		- booleans are 0 and 1
 		- lists of numbers
 
 	- constants that start with #
+		- #true, #false, #e, #pi
+		TODO #ans (requires shared memory)
 
-	- ability to do function calls with prefix notation similar to lisp
+	- function calls use prefix notation similar to lisp
 		(+ (* 5 10) 6)
 		= 56
 
-	- arithmetic operators, all are (int, int) -> int
+	TODO
+	(? x) - print a help message about x (if it's a variable say what type, print any function help message)
+
+
+	- arithmetic operators
 		(+ x y)
 		(- x y)
 		(* x y)
+		(/ x y)
 		(% x y)
 
-	- comparison operators, all are (int, int) -> int
+	- comparison operators
 		(= x y)
 		(!= x y)
 		(< x y)
@@ -39,14 +40,53 @@
 		(> x y)
 		(>= x y)
 
-	- type conversion
-		(bool x) - convert a number to 0 or 1 (equivalent to `!!x` in C)
+	- boolean logic - anything != 0 is true
+		(bool x) - convert a number to 0 or 1
+
+	TODO actually convert to #true or #false
+	add bool type to numbers, set only if it's the result of a boolean
+	operation, not just if it's 0 or 1
+
+	TODO
+		(not x)
+		(and x y)
+		(or x y)
+		(xor x y)
+
+	TODO
+		(abs x) - absolute value
+		(neg x) - flip the sign of x
+		(sign x) - returns -1, 0, or 1
+		(sq x) - square x
+		(cb x) - cube x
+		(pow n x) - x^n power
+		(sqrt x) - square root
+		(cbrt x) - cube root
+		(root n x) - nth root
+		(sin x)
+		(cos x)
+		(tan x)
+		rest of the trig functions...
+		(min x y)
+		(max x y)
+		(floor x)
+		(ceil x)
+		(round x) - to nearest integer
+		(rand min max)
+		(ln x)
+		(log10 x)
+		(log base x)
+		(exp x) - e^x
 
 	- list operations
 		(list ...) - construct a list of numbers
 		(len l) - get the length of a list
 		(sum l) - sum up a list of numbers
 		(range start stop) - construct a list of ints in range [start, stop)
+
+	TODO
+		(get l index) - returns l[index]
+		(join ...) - join lists into one
 
 	- logic
 		(if cond then else)
@@ -56,39 +96,51 @@
 
 */
 
-// global context
-REPLContext ctx;
+// global vars
+REPLContext ctx = {0};
+
+RT_FnList RT_BUILTIN_FUNCTIONS = {0};
+RT_VarList RT_CONSTANT_VARS = {0};
+ErrorString CPRV_ERROR_NAMES[] = {0};
 
 int main(int argc, char** argv) {
 
 	rt_init();
 
-	ctx.is_running = true;
+	// validate args
 
-	if (argc == 3) {
-		 if (!strcmp(argv[1], "-s") || !strcmp(argv[1], "--string")) {
-			repl_once(argv[2]);
-			repl_quit();
-			return 0;
-		 }
-		 fprintf(stderr, "USAGE: \n"
-		 				"\tpnc: enter repl mode\n"
-		 				"\tpnc [-s|--string] \"<program>\"\n");
-		 repl_quit();
-		 return 0;
+	bool args_valid = true;
+	if (argc != 1
+	|| (argc == 3 && strcmp(argv[1], "-s") != 0
+		&& strcmp(argv[1], "--string") != 0))
+	{
+		args_valid = false;
 	}
 
-	
+	if (!args_valid) {
+		fprintf(stderr,
+			"USAGE: \n"
+			"\tpnc: enter repl mode\n"
+			"\tpnc [-s|--string] \"<program>\"\n");
+		repl_quit();
+		return 0;
+	}
 
-	while (ctx.is_running) {
-		repl_once(NULL);
+	bool run_once = (argc == 3);
+	if (run_once) {
+		// if argv == [pnc, -s|--string, "..."], evaluate argv[2]
+		repl_once(argv[2]);
+	} else {
+		// if nothing was passed, start the repl (read from stdin in a loop)
+		ctx.is_running = true;
+		while (ctx.is_running) {
+			repl_once(NULL);
+		}
 	}
 
 	repl_quit();
 	return 0;
 }
-
-// step 1: program string to list of tokens
 
 TokenList tokenize(char* prog) {
 	TokenList l = tl_new();
@@ -125,6 +177,26 @@ TokenList tokenize(char* prog) {
 	}
 
 	return l;
+}
+
+void node_print_rec(ASTNode* node, int level) {
+	for (int i = 0; i < level; i++) {
+		putc('\t', stdout);
+		putc('|', stdout);
+	}
+	if (node->type == A_ATOM) {
+		printf("ASTNode<type=A_ATOM, \"%.*s\">\n",
+			node->atom_len,
+			node->atom_str);
+	} else if (node->type == A_LIST) {
+		printf("ASTNode<type=A_LIST, %d items>:\n",
+			node->list_len);
+		for (int i = 0; i < node->list_len; i++) {
+			node_print_rec(node->list_items[i], level + 1);
+		}
+	} else {
+		printf("ASTNode<type=A_UNIMPLEMENTED: see line %d>\n", __LINE__);
+	}
 }
 
 ASTNode* make_ast_single(Token t) {
@@ -203,135 +275,6 @@ ASTNode* make_ast(TokenList tl) {
 
 	else {
 		childproc_panic(RV_PARSE_ERROR, "unrecognized expression");
-	}
-}
-
-bool is_whole_number(double val) {
-	return floor(val) == val;
-}
-
-bool num_from_str(char* str, int len, Number* out) {
-
-	char* s = strndup(str, len);
-
-	char* endptr = s;
-	double d = strtod(s, &endptr);
-	if (endptr == s) {
-		// failed
-		return false;
-	}
-
-	free(s);
-	
-	*out = num(d);
-	return true;
-}
-
-char* num_to_str(Number n) {
-
-	char* buf;
-	int num_bytes;
-	if (n.type == NUM_INT) {
-		num_bytes = snprintf(NULL, 0, "%d", (int)n.value);
-		buf = malloc(num_bytes + 1);
-		snprintf(buf, num_bytes, "%d", (int)n.value);
-	} else {
-		num_bytes = snprintf(NULL, 0, "%lf", n.value);
-		buf = malloc(num_bytes + 1);
-		snprintf(buf, num_bytes, "%lf", n.value);
-	}
-	return buf;
-}
-
-Number num_add(Number n1, Number n2) {
-	return num(n1.value + n2.value);
-}
-
-Number num_sub(Number n1, Number n2) {
-	return num(n1.value - n2.value);
-}
-
-Number num_mul(Number n1, Number n2) {
-	return num(n1.value * n2.value);
-}
-
-Number num_div(Number n1, Number n2) {
-	if (n2.value == 0) {
-		childproc_panic(RV_DIVIDE_BY_ZERO_ERROR, "argument #2 of function '/' cannot be 0");
-	}
-
-	return num(n1.value / n2.value);
-}
-
-Number num_mod(Number n1, Number n2) {
-
-	if (!is_whole_number(n1.value)) {
-		childproc_panic(RV_VALUE_ERROR, "argument #1 of function '%' is %lf, expected an integer", n1.value);
-	}
-
-	if (!is_whole_number(n2.value)) {
-		childproc_panic(RV_VALUE_ERROR, "argument #2 of function '%' is %lf, expected an integer", n2.value);
-	}
-
-	if (n2.value == 0) {
-		childproc_panic(RV_DIVIDE_BY_ZERO_ERROR, "argument #2 of function '%' cannot be 0");
-	}
-
-	return num((int)n1.value % (int)n2.value);
-}
-
-Number num_eq(Number n1, Number n2) {
-	return num(n1.value == n2.value);
-}
-
-Number num_neq(Number n1, Number n2) {
-	return num(n1.value != n2.value);
-}
-
-Number num_lt(Number n1, Number n2) {
-	return num(n1.value < n2.value);
-}
-
-Number num_gt(Number n1, Number n2) {
-	return num(n1.value > n2.value);
-}
-
-Number num_le(Number n1, Number n2) {
-	return num(n1.value <= n2.value);
-}
-
-Number num_ge(Number n1, Number n2) {
-	return num(n1.value >= n2.value);
-}
-
-// convert a number to 0 or 1
-Number num_to_bool(Number n) {
-	return num(!!n.value);
-}
-
-void expr_print_rec(Expr* e) {
-	if (e->type == E_NUMBER) {
-		printf("(num %lf)", e->number.value);
-	} else if (e->type == E_FUNCCALL) {
-		printf("(%.*s ",
-			e->funccall.func.name_len,
-			e->funccall.func.name);
-
-		for (int i = 0; i < e->funccall.num_args_passed; i++) {
-			expr_print_rec(e->funccall.args[i]);
-
-			if (i != e->funccall.num_args_passed - 1) {
-				putc(' ', stdout);
-			}
-
-		}
-
-		putc(')', stdout);
-
-	} else if (e->type == E_IDENT) {
-		printf("%.*s", e->ident.len, e->ident.name);
-	} else {
-		putc('?', stdout);
 	}
 }
 
@@ -418,23 +361,31 @@ Expr* parse(ASTNode* ast) {
 	childproc_panic(RV_PARSE_ERROR, "unrecognized expression");
 }
 
-char* stringify_value_type(ValueType type) {
-	switch (type) {
-		case V_NONE: return "none";
-		case V_NUM: return "num";
-		case V_LIST: return "list of num";
-	}
-}
-
-char* stringify_value(Value v) {
-	if (v.type == V_LIST) {
-		return strdup("(...)");
-	} else if (v.type == V_NUM) {
-		return num_to_str(v.number_value);
-	} else {
-		return strdup("none");
-	}
-}
+// void expr_print_rec(Expr* e) {
+// 	if (e->type == E_NUMBER) {
+// 		printf("(num %lf)", e->number.value);
+// 	} else if (e->type == E_FUNCCALL) {
+// 		printf("(%.*s ",
+// 			e->funccall.func.name_len,
+// 			e->funccall.func.name);
+//
+// 		for (int i = 0; i < e->funccall.num_args_passed; i++) {
+// 			expr_print_rec(e->funccall.args[i]);
+//
+// 			if (i != e->funccall.num_args_passed - 1) {
+// 				putc(' ', stdout);
+// 			}
+//
+// 		}
+//
+// 		putc(')', stdout);
+//
+// 	} else if (e->type == E_IDENT) {
+// 		printf("%.*s", e->ident.len, e->ident.name);
+// 	} else {
+// 		putc('?', stdout);
+// 	}
+// }
 
 void assert_funccall_arg_count_correct(Expr* e) {
 	if (e->funccall.func.num_args == RTFN_VARARGS
@@ -466,296 +417,6 @@ Value try_eval_arg_as_type(Expr* e, int arg_num, ValueType type) {
 	}
 
 	return v;
-}
-
-Value e_func_add(Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-	Value arg1 = try_eval_arg_as_type(e, 1, V_NUM);
-
-	Number n0 = arg0.number_value;
-	Number n1 = arg1.number_value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num_add(n0, n1)
-	};
-}
-
-Value e_func_sub(Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-	Value arg1 = try_eval_arg_as_type(e, 1, V_NUM);
-
-	Number n0 = arg0.number_value;
-	Number n1 = arg1.number_value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num_sub(n0, n1)
-	};
-}
-
-Value e_func_mul(Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-	Value arg1 = try_eval_arg_as_type(e, 1, V_NUM);
-
-	Number n0 = arg0.number_value;
-	Number n1 = arg1.number_value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num_mul(n0, n1)
-	};
-}
-
-Value e_func_div(Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-	Value arg1 = try_eval_arg_as_type(e, 1, V_NUM);
-
-	Number n0 = arg0.number_value;
-	Number n1 = arg1.number_value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num_div(n0, n1)
-	};
-}
-
-Value e_func_mod(Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-	Value arg1 = try_eval_arg_as_type(e, 1, V_NUM);
-
-	Number n0 = arg0.number_value;
-	Number n1 = arg1.number_value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num_mod(n0, n1)
-	};
-}
-
-Value e_func_eq(struct Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-	Value arg1 = try_eval_arg_as_type(e, 1, V_NUM);
-
-	Number n0 = arg0.number_value;
-	Number n1 = arg1.number_value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num_eq(n0, n1)
-	};
-}
-
-Value e_func_neq(struct Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-	Value arg1 = try_eval_arg_as_type(e, 1, V_NUM);
-
-	Number n0 = arg0.number_value;
-	Number n1 = arg1.number_value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num_neq(n0, n1)
-	};
-}
-
-Value e_func_lt(struct Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-	Value arg1 = try_eval_arg_as_type(e, 1, V_NUM);
-
-	Number n0 = arg0.number_value;
-	Number n1 = arg1.number_value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num_lt(n0, n1)
-	};
-}
-
-Value e_func_gt(struct Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-	Value arg1 = try_eval_arg_as_type(e, 1, V_NUM);
-
-	Number n0 = arg0.number_value;
-	Number n1 = arg1.number_value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num_gt(n0, n1)
-	};
-}
-
-Value e_func_le(struct Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-	Value arg1 = try_eval_arg_as_type(e, 1, V_NUM);
-
-	Number n0 = arg0.number_value;
-	Number n1 = arg1.number_value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num_le(n0, n1)
-	};
-}
-
-Value e_func_ge(struct Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-	Value arg1 = try_eval_arg_as_type(e, 1, V_NUM);
-
-	Number n0 = arg0.number_value;
-	Number n1 = arg1.number_value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num_ge(n0, n1)
-	};
-}
-
-Value e_func_bool(struct Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-
-	Number n0 = arg0.number_value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num_to_bool(n0)
-	};
-}
-
-size_t e_func_fib_r(size_t n) {
-	if (n < 2)
-		return 1;
-	else
-		return e_func_fib_r(n-1) + e_func_fib_r(n-2);
-}
-
-Value e_func_fib(struct Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-
-	Number n0 = arg0.number_value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num(e_func_fib_r(n0.value))
-	};
-}
-
-Value e_func_list(struct Expr* e) {
-
-	NumberList result = nl_new();
-
-	// empty list
-	if (e->funccall.num_args_passed == 0) {
-		return (Value){
-			.type = V_LIST,
-			.list_value = result
-		};
-	}
-
-	for (int i = 0; i < e->funccall.num_args_passed; i++) {
-
-		// manually doing try_eval_arg_as_type to print a specific msg
-
-		Value list_item = eval(e->funccall.args[i]);
-
-		if (list_item.type == V_LIST) {
-			childproc_panic(RV_VALUE_ERROR,
-				"a list cannot contain another list");
-		}
-
-		nl_append(result, list_item.number_value);
-	}
-	
-	return (Value){
-		.type = V_LIST,
-		.list_value = result
-	};
-}
-
-Value e_func_len(struct Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_LIST);
-
-	int result = arg0.list_value.num_nums;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num(result)
-	};
-}
-
-Value e_func_sum(struct Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_LIST);
-	
-	Number result = num(0);
-
-	for (int i = 0; i < arg0.list_value.num_nums; i++) {
-
-		Number arg_value_n = arg0.list_value.nums[i];
-
-		result = num_add(result, arg_value_n);
-	}
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = result
-	};
-}
-
-Value e_func_range(struct Expr* e) {
-
-	// TODO assert start and stop are not floats
-	// fix logic pls :)
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-	Value arg1 = try_eval_arg_as_type(e, 1, V_NUM);
-
-	int start = arg0.number_value.value;
-	int stop = arg1.number_value.value;
-
-	NumberList result = nl_new();
-
-	for (int i = start; i < stop; i++) {
-		Number n = num(i);
-		nl_append(result, n);
-	}
-
-	return (Value){
-		.type = V_LIST,
-		.list_value = result
-	};
-}
-
-Value e_func_if(struct Expr* e) {
-
-	Value arg0 = try_eval_arg_as_type(e, 0, V_NUM);
-	Value arg1 = try_eval_arg_as_type(e, 1, V_NUM);
-	Value arg2 = try_eval_arg_as_type(e, 2, V_NUM);
-
-	Number if_cond = num_to_bool(arg0.number_value);
-	Number then_expr = arg1.number_value;
-	Number else_expr = arg2.number_value;
-
-	int result = (if_cond.value) ? then_expr.value : else_expr.value;
-
-	return (Value){
-		.type = V_NUM,
-		.number_value = num(result)
-	};
 }
 
 Value eval_constant(Expr* e) {
@@ -805,34 +466,104 @@ Value eval(Expr* e) {
 	}
 }
 
+char* stringify_value(Value v) {
+	if (v.type == V_LIST) {
+		return strdup("(...)");
+	} else if (v.type == V_NUM) {
+		return num_to_str(v.number_value);
+	} else {
+		return strdup("none");
+	}
+}
+
+char* stringify_value_type(ValueType type) {
+	switch (type) {
+		case V_NUM: return "number";
+		case V_LIST: return "list of numbers";
+		case V_NONE: return "unknown";
+	}
+}
+
 void rt_init() {
 
 	RT_CONSTANT_VARS = rt_varlist_new();
 
-	rt_add_constant("#false", (Value){.type=V_NUM, .number_value=num(0)});
-	rt_add_constant("#true", (Value){.type=V_NUM, .number_value=num(1)});
-	rt_add_constant("#pi", (Value){.type=V_NUM, .number_value=num(3.1415926536)});
+	rt_add_constant("#false", (Value){
+		.type=V_NUM,
+		.number_value=num_from_u32(0)
+	});
+
+	rt_add_constant("#true", (Value){
+		.type=V_NUM,
+		.number_value=num_from_u32(1)
+	});
+
+	// rt_add_constant("#pi", (Value){
+	// 	.type=V_NUM,
+	// 	.number_value=num_from_u32(3.1415926536)
+	// });
 
 	RT_BUILTIN_FUNCTIONS = rt_fnlist_new();
 
 	rt_add_func("+", e_func_add, 2, V_NUM, {V_NUM, V_NUM});
-	rt_add_func("-", e_func_sub, 2, V_NUM, {V_NUM, V_NUM});
-	rt_add_func("*", e_func_mul, 2, V_NUM, {V_NUM, V_NUM});
-	rt_add_func("/", e_func_div, 2, V_NUM, {V_NUM, V_NUM});
-	rt_add_func("%", e_func_mod, 2, V_NUM, {V_NUM, V_NUM});
-	rt_add_func("=", e_func_eq, 2, V_NUM, {V_NUM, V_NUM});
-	rt_add_func("!=", e_func_neq, 2, V_NUM, {V_NUM, V_NUM});
-	rt_add_func(">", e_func_gt, 2, V_NUM, {V_NUM, V_NUM});
-	rt_add_func("<=", e_func_le, 2, V_NUM, {V_NUM, V_NUM});
-	rt_add_func("<", e_func_lt, 2, V_NUM, {V_NUM, V_NUM});
-	rt_add_func(">=", e_func_ge, 2, V_NUM, {V_NUM, V_NUM});
-	rt_add_func("bool", e_func_bool, 1, V_NUM, {V_NUM});
-	rt_add_func("fib", e_func_fib, 1, V_NUM, {V_NUM});
-	rt_add_func("list", e_func_list, RTFN_VARARGS, V_LIST, {V_NUM});
-	rt_add_func("len", e_func_len, 1, V_NUM, {V_LIST});
-	rt_add_func("sum", e_func_sum, 1, V_NUM, {V_LIST});
-	rt_add_func("range", e_func_range, 2, V_NUM, {V_NUM, V_NUM});
-	rt_add_func("if", e_func_if, 3, V_NUM, {V_NUM, V_NUM, V_NUM});
+	// rt_add_func("-", e_func_sub, 2, V_NUM, {V_NUM, V_NUM});
+	// rt_add_func("*", e_func_mul, 2, V_NUM, {V_NUM, V_NUM});
+	// rt_add_func("/", e_func_div, 2, V_NUM, {V_NUM, V_NUM});
+	// rt_add_func("%", e_func_mod, 2, V_NUM, {V_NUM, V_NUM});
+	// rt_add_func("=", e_func_eq, 2, V_NUM, {V_NUM, V_NUM});
+	// rt_add_func("!=", e_func_neq, 2, V_NUM, {V_NUM, V_NUM});
+	// rt_add_func(">", e_func_gt, 2, V_NUM, {V_NUM, V_NUM});
+	// rt_add_func("<=", e_func_le, 2, V_NUM, {V_NUM, V_NUM});
+	// rt_add_func("<", e_func_lt, 2, V_NUM, {V_NUM, V_NUM});
+	// rt_add_func(">=", e_func_ge, 2, V_NUM, {V_NUM, V_NUM});
+	// rt_add_func("bool", e_func_bool, 1, V_NUM, {V_NUM});
+	// rt_add_func("fib", e_func_fib, 1, V_NUM, {V_NUM});
+	// rt_add_func("list", e_func_list, RTFN_VARARGS, V_LIST, {V_NUM});
+	// rt_add_func("len", e_func_len, 1, V_NUM, {V_LIST});
+	// rt_add_func("sum", e_func_sum, 1, V_NUM, {V_LIST});
+	// rt_add_func("range", e_func_range, 2, V_NUM, {V_NUM, V_NUM});
+	// rt_add_func("if", e_func_if, 3, V_NUM, {V_NUM, V_NUM, V_NUM});
+
+	// not needed, print the result instead
+	CPRV_ERROR_NAMES[RV_OK] = "";
+
+	// not needed, print nothing
+	CPRV_ERROR_NAMES[RV_OK_EMPTY] = "";
+
+	CPRV_ERROR_NAMES[RV_PARSE_ERROR] = "parse error";
+	// : unbalanced parentheses
+	// : unrecognized expression
+	// : illegal number literal <lit>
+
+	CPRV_ERROR_NAMES[RV_VALUE_ERROR] = "value error";
+	// : argument #1 of function '+' is type list, expected num
+	// : function '+' got 3 arguments, expected 2
+	// : argument #2 of function '%' is %lf, expected an integer
+	// : a list can only contain numbers
+
+	CPRV_ERROR_NAMES[RV_DIVIDE_BY_ZERO_ERROR] = "divide by zero error";
+	// : argument #2 of function '%' cannot be 0
+	// : argument #2 of function '/' cannot be 0
+
+	CPRV_ERROR_NAMES[RV_NAME_ERROR] = "name error";
+	// : 'x' is unknown
+	// : undefined variable 'x'
+	// : undefined constant '#maybe'
+	// : undefined function '+'
+	// : '5' is not a function, maybe you meant '(list 5 6 7)'?
+
+	CPRV_ERROR_NAMES[RV_MEMORY_ERROR] = "memory error";
+	// : memory allocation failed, try again
+	// : process creation failed, try again
+
+	CPRV_ERROR_NAMES[RV_OTHER_ERROR] = "internal error";
+	// : something bad happened on line %d
+
+	// the fact that this is even being printed is an error
+	// so it can be treated like an internal error
+	CPRV_ERROR_NAMES[RV_NONE] = "internal error";
+	// : something REALLY bad happened on line %d
+
 }
 
 void eval_pnc_expr(char* input, bool spawn_child_proc) {
@@ -842,12 +573,9 @@ void eval_pnc_expr(char* input, bool spawn_child_proc) {
 		int pid = fork();
 		if (pid > 0) {
 
-			// parent
+			// parent waits for child to finish
 
 			wait(NULL);
-
-			// fputs(ctx.result->str, stdout);
-			// fputs("\n", stdout);
 
 			return;
 
@@ -891,9 +619,14 @@ void eval_pnc_expr(char* input, bool spawn_child_proc) {
 
 	Value v = eval(expr);
 
-	if (spawn_child_proc) {	
+	if (spawn_child_proc) {
 		// child exits, freeing all memory
 		childproc_return(v);
+	} else {
+		// or main process prints the result
+		char* str = stringify_value(v);
+		printf("= %s\n", str);
+		free(str);
 	}
 }
 

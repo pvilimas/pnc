@@ -5,12 +5,15 @@
 #include <ctype.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+#include "number.h"
 
 // token
 
@@ -96,25 +99,7 @@ typedef struct ASTNode {
 #define node_new() \
 	(calloc(1, sizeof(ASTNode)))
 
-void node_print_rec(ASTNode* node, int level) {
-	for (int i = 0; i < level; i++) {
-		putc('\t', stdout);
-		putc('|', stdout);
-	}
-	if (node->type == A_ATOM) {
-		printf("ASTNode<type=A_ATOM, \"%.*s\">\n",
-			node->atom_len,
-			node->atom_str);
-	} else if (node->type == A_LIST) {
-		printf("ASTNode<type=A_LIST, %d items>:\n",
-			node->list_len);
-		for (int i = 0; i < node->list_len; i++) {
-			node_print_rec(node->list_items[i], level + 1);
-		}
-	} else {
-		printf("ASTNode<type=A_UNIMPLEMENTED: see line %d>\n", __LINE__);
-	}
-}
+void node_print_rec(ASTNode* node, int level);
 
 #define node_print(node) \
 	(node_print_rec((node), 0))
@@ -140,76 +125,6 @@ ASTNode* make_ast_list_simple(TokenList tl);
 
 // step 2: list of tokens to ast tree
 ASTNode* make_ast(TokenList tl);
-
-// expr/val/number
-
-// whole numbers should be NUM_INT, the rest are floats
-// eventually will add a bignum type with something like `int* digits`
-// (round up size to next multiple of 32 bits)
-// and maybe a power notation like { int base; int power; } for scientific
-
-// TODO replace int int_value; with double value; 
-// set the int flag only if it's a whole number
-
-typedef enum {
-	NUM_INT,
-	NUM_FLOAT
-} NumberType;
-
-typedef struct {
-	NumberType type;
-	union {
-		double value;
-	};
-} Number;
-
-// constructor
-#define num(dval) \
-	(Number){.type=(is_whole_number(dval)) ? NUM_INT : NUM_FLOAT, .value=dval}
-
-// used to decide if a number should be an int or a float
-bool is_whole_number(double val);
-
-#define num_print(n) \
-	do { \
-		if (n.type == NUM_INT) { \
-			printf("%d", (int) n.value); \
-		} else { \
-			printf("%lf", n.value); \
-		} \
-	} while(0)
-
-// conversion functions
-
-// returns false if failed, or writes to out
-bool num_from_str(char* str, int len, Number* out);
-
-// will never fail
-char* num_to_str(Number n);
-
-// arithmetic operators - assume type is correct
-
-Number num_add(Number n1, Number n2);
-Number num_sub(Number n1, Number n2);
-Number num_mul(Number n1, Number n2);
-
-// panics if n2 is 0
-Number num_div(Number n1, Number n2);
-
-// panics if n2 is 0, assumes both are ints
-Number num_mod(Number n1, Number n2);
-
-// comparison operators
-
-Number num_eq(Number n1, Number n2);
-Number num_neq(Number n1, Number n2);
-Number num_lt(Number n1, Number n2);
-Number num_gt(Number n1, Number n2);
-Number num_le(Number n1, Number n2);
-Number num_ge(Number n1, Number n2);
-
-// convert a number to 0 or 1
-Number num_to_bool(Number n);
 
 // expr type
 
@@ -290,28 +205,28 @@ typedef struct {
 
 // declarations of builtin functions and operators
 Value e_func_add(struct Expr* e);
-Value e_func_sub(struct Expr* e);
-Value e_func_mul(struct Expr* e);
-Value e_func_div(struct Expr* e);
-Value e_func_mod(struct Expr* e);
-
-Value e_func_eq(struct Expr* e);
-Value e_func_neq(struct Expr* e);
-Value e_func_lt(struct Expr* e);
-Value e_func_gt(struct Expr* e);
-Value e_func_le(struct Expr* e);
-Value e_func_ge(struct Expr* e);
-
-Value e_func_bool(struct Expr* e);
-
-Value e_func_fib(struct Expr* e);
-
-Value e_func_list(struct Expr* e);
-Value e_func_len(struct Expr* e);
-Value e_func_sum(struct Expr* e);
-Value e_func_range(struct Expr* e);
-
-Value e_func_if(struct Expr* e);
+// Value e_func_sub(struct Expr* e);
+// Value e_func_mul(struct Expr* e);
+// Value e_func_div(struct Expr* e);
+// Value e_func_mod(struct Expr* e);
+//
+// Value e_func_eq(struct Expr* e);
+// Value e_func_neq(struct Expr* e);
+// Value e_func_lt(struct Expr* e);
+// Value e_func_gt(struct Expr* e);
+// Value e_func_le(struct Expr* e);
+// Value e_func_ge(struct Expr* e);
+//
+// Value e_func_bool(struct Expr* e);
+//
+// Value e_func_fib(struct Expr* e);
+//
+// Value e_func_list(struct Expr* e);
+// Value e_func_len(struct Expr* e);
+// Value e_func_sum(struct Expr* e);
+// Value e_func_range(struct Expr* e);
+//
+// Value e_func_if(struct Expr* e);
 
 // list of functions defined in the runtime
 typedef struct {
@@ -349,7 +264,7 @@ typedef struct {
 
 // list of functions available in the runtime
 // their argument count, argument types, return types are all specified in here
-RT_FnList RT_BUILTIN_FUNCTIONS = {0};
+extern RT_FnList RT_BUILTIN_FUNCTIONS;
 
 typedef enum {
 	E_NONE,
@@ -444,7 +359,7 @@ typedef struct {
 		rt_fnlist_resize(l, (l).num_vars - 1); \
 	} while(0)
 
-RT_VarList RT_CONSTANT_VARS = {0};
+extern RT_VarList RT_CONSTANT_VARS;
 
 // variable lookup
 // a name that starts with '#'
@@ -538,43 +453,7 @@ typedef char* ErrorString;
 // these are used as prefixes for the actual error message
 // which should have the format "<errtype>: <description>"
 // "value error: divide by zero"
-ErrorString CPRV_ERROR_NAMES[RV_N] = (ErrorString[]){
-	[RV_OK] = "", // not needed, print the result instead
-	[RV_OK_EMPTY] = "", // not needed, print nothing
-
-	[RV_PARSE_ERROR] = "parse error",
-	// : unbalanced parentheses
-	// : unrecognized expression
-
-	[RV_VALUE_ERROR] = "value error",
-	// : argument #1 of function '+' is type list, expected num
-	// : function '+' got 3 arguments, expected 2
-	// : argument #2 of function '%' is %lf, expected an integer
-	// : a list can only contain numbers
-
-	[RV_DIVIDE_BY_ZERO_ERROR] = "divide by zero error",
-	// : argument #2 of function '%' cannot be 0
-	// : argument #2 of function '/' cannot be 0
-
-	[RV_NAME_ERROR] = "name error",
-	// : 'x' is unknown
-	// : undefined variable 'x'
-	// : undefined constant '#maybe'
-	// : undefined function '+'
-	// : '5' is not a function, maybe you meant '(list 5 6 7)'?
-
-	[RV_MEMORY_ERROR] = "memory error",
-	// : memory allocation failed, try again
-	// : process creation failed, try again
-
-	[RV_OTHER_ERROR] = "internal error",
-	// : something bad happened on line %d
-
-	// the fact that this is even being printed is an error
-	// so it can be treated like an internal error
-	[RV_NONE] = "internal error",
-	// : something REALLY bad happened on line %d
-};
+extern ErrorString CPRV_ERROR_NAMES[RV_N];
 
 // print value and exit
 #define childproc_return(v) \
