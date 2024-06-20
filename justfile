@@ -2,10 +2,10 @@ all: build run
 
 build:
 	gcc -std=gnu11 -Wall -Wextra \
-		pnc.c \
-		number.c \
-		runtime_functions.c \
-		-o pnc -lm -lgmp -lmpfr
+		src/pnc.c \
+		src/number.c \
+		src/runtime_functions.c \
+		-o build/pnc -lm -lgmp -lmpfr
 
 run:
-	./pnc
+	./build/pnc
