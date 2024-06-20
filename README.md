@@ -1,4 +1,4 @@
-# pnc - prefix notation calculator
+# pnc - Prefix Notation Calculator
 A shell command that evaluates simple math expressions using prefix notation. Built using [libgmp](https://gmplib.org/gmp-man-6.3.0.pdf).
 
 ## Still in development, currently supports:
