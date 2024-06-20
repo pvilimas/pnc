@@ -441,7 +441,7 @@ typedef enum {
 	// malloc failed, fork failed, etc
 	RV_MEMORY_ERROR,
 
-	// something else happened
+	// something else happened (invariant error)
 	RV_OTHER_ERROR,
 
 	RV_N

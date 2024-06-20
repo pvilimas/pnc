@@ -105,6 +105,10 @@ ErrorString CPRV_ERROR_NAMES[] = {0};
 
 int main(int argc, char** argv) {
 
+	// round floats to nearest number
+	// mpfr_set_default_rounding_mode(MPFR_RNDN);
+
+	// init runtime variables
 	rt_init();
 
 	// validate args
@@ -174,6 +178,27 @@ TokenList tokenize(char* prog) {
 		}
 		
 		i++;
+	}
+
+	// add () at top-level if necessary
+	// this avoids syntax errors for simple expressions like + 1 3
+	// or set x 5
+	// will not add if top level expression is already valid like
+	// (+ 5 6)
+
+	if (l.len >= 2
+	&& l.tokens[0].type != T_OPEN_PAREN
+	&& l.tokens[l.len - 1].type != T_CLOSE_PAREN) {
+
+		TokenList l_wrapped = tl_new();
+		tl_append(l_wrapped, (Token){.type = T_OPEN_PAREN});
+
+		for (int i = 0; i < l.len; i++) {
+			tl_append(l_wrapped, l.tokens[i]);
+		}
+
+		tl_append(l_wrapped, (Token){.type = T_CLOSE_PAREN});
+		return l_wrapped;
 	}
 
 	return l;
@@ -464,6 +489,9 @@ Value eval(Expr* e) {
 		assert_funccall_arg_count_correct(e);
 		return e->funccall.func.actual_function(e);
 	}
+
+	childproc_panic(RV_OTHER_ERROR,
+		"something bad happened on line %d", __LINE__);
 }
 
 char* stringify_value(Value v) {
@@ -480,7 +508,7 @@ char* stringify_value_type(ValueType type) {
 	switch (type) {
 		case V_NUM: return "number";
 		case V_LIST: return "list of numbers";
-		case V_NONE: return "unknown";
+		default: return "unknown";
 	}
 }
 
@@ -490,12 +518,12 @@ void rt_init() {
 
 	rt_add_constant("#false", (Value){
 		.type=V_NUM,
-		.number_value=num_from_u32(0)
+		.number_value=number_integer_from_u32(0)
 	});
 
 	rt_add_constant("#true", (Value){
 		.type=V_NUM,
-		.number_value=num_from_u32(1)
+		.number_value=number_integer_from_u32(1)
 	});
 
 	// rt_add_constant("#pi", (Value){
@@ -548,7 +576,7 @@ void rt_init() {
 	CPRV_ERROR_NAMES[RV_NAME_ERROR] = "name error";
 	// : 'x' is unknown
 	// : undefined variable 'x'
-	// : undefined constant '#maybe'
+	// : undefined constant '#x'
 	// : undefined function '+'
 	// : '5' is not a function, maybe you meant '(list 5 6 7)'?
 
@@ -576,7 +604,6 @@ void eval_pnc_expr(char* input, bool spawn_child_proc) {
 			// parent waits for child to finish
 
 			wait(NULL);
-
 			return;
 
 		} else if (pid < 0) {
