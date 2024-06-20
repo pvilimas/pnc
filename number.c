@@ -183,43 +183,69 @@ bool num_real_from_str(char* str, int len, Number* out) {
     return true;
 }
 
+void Z_to_Q(mpz_t z, mpq_t q_out) {
+    mpq_init(q_out);
+    mpq_set_z(q_out, z);
+}
+
 Number num_add(Number n1, Number n2) {
 
     Number result;
 
     if (n1.type == NUM_INTEGER && n2.type == NUM_INTEGER) {
-        result = number_integer_from_u32(0);
-        mpz_add(result.integer_value,
-            n1.integer_value,
-            n2.integer_value);
-
-        return result;
+        num_add_ZZ_Z(n1, n2, &result);
     }
 
     else if (n1.type == NUM_INTEGER && n2.type == NUM_RATIONAL) {
-        mpq_t n1_rational;
-        mpq_init(n1_rational);
-        mpq_set_z(n1_rational, n1.integer_value);
-
-        result = number_rational_from_u32s(0, 1);
-        mpq_set_z(result.rational_value, n1.integer_value);
-        mpq_add(result.rational_value, n1_rational, n2.rational_value);
-        return result;
+        num_add_ZQ_Q(n1, n2, &result);
     }
 
     else if (n1.type == NUM_RATIONAL && n2.type == NUM_INTEGER) {
-        return num_add(n2, n1);
+        num_add_ZQ_Q(n2, n1, &result);
     }
 
     else if (n1.type == NUM_RATIONAL && n2.type == NUM_RATIONAL) {
-        result = number_rational_from_u32s(0, 1);
-        mpq_add(result.rational_value,
-            n1.rational_value,
-            n2.rational_value);
-
-        return result;
+        num_add_QQ_Q(n1, n2, &result);
+    } else {
+        printf("oops\n");
+        exit(1);
     }
 
-    // should never reach this point
-    return (Number){0};
+    return result;
+}
+
+void num_add_ZZ_Z(Number n1, Number n2, Number* out) {
+    *out = number_integer_from_u32(0);
+
+    mpz_add(out->integer_value,
+        n1.integer_value,
+        n2.integer_value);
+}
+
+void num_add_ZQ_Q(Number n1, Number n2, Number* out) {
+    *out = number_rational_from_u32s(0, 1);
+
+    mpq_t q1;
+    Z_to_Q(n1.integer_value, q1);
+    mpq_add(out->rational_value,
+        q1,
+        n2.rational_value);
+}
+
+void num_add_QZ_Q(Number n1, Number n2, Number* out) {
+    *out = number_rational_from_u32s(0, 1);
+
+    mpq_t q2;
+    Z_to_Q(n2.integer_value, q2);
+    mpq_add(out->rational_value,
+        n1.rational_value,
+        q2);
+}
+
+void num_add_QQ_Q(Number n1, Number n2, Number* out) {
+    *out = number_rational_from_u32s(0, 1);
+
+    mpq_add(out->rational_value,
+        n1.rational_value,
+        n2.rational_value);
 }
