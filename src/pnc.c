@@ -474,15 +474,17 @@ void rt_init() {
 
 	RT_CONSTANT_VARS = rt_varlist_new();
 
-	rt_add_constant("#false", (Value){
-		.type=V_NUM,
-		.number_value=number_integer_from_u32(0)
-	});
+	// broken
 
-	rt_add_constant("#true", (Value){
-		.type=V_NUM,
-		.number_value=number_integer_from_u32(1)
-	});
+	// rt_add_constant("#false", (Value){
+	// 	.type=V_NUM,
+	// 	.number_value=number_integer_from_u32(0)
+	// });
+ //
+	// rt_add_constant("#true", (Value){
+	// 	.type=V_NUM,
+	// 	.number_value=number_integer_from_u32(1)
+	// });
 
 	// rt_add_constant("#pi", (Value){
 	// 	.type=V_NUM,

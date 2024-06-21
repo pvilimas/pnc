@@ -41,6 +41,9 @@ typedef enum {
 
 typedef struct {
     NumType type;
+
+    uint8_t base;
+
     union {
 
         // NUM_INTEGER
@@ -55,17 +58,14 @@ typedef struct {
 
 } Number;
 
-// constructors
-Number number_integer_from_u32(uint32_t x);
-Number number_rational_from_u32s(uint32_t p, uint32_t q); // = p/q
-Number number_real_from_d(double d);
 // ...
 
 // output directly to stdout
 void num_print(Number n);
-    void num_print_integer(Number n);
-    void num_print_rational(Number n);
-    void num_print_real(Number n);
+void num_print_integer(Number n);
+void num_print_rational(Number n);
+void num_print_real(Number n);
+void print_base_prefix(uint8_t base);
 
 // string conversion - generic versions
 
@@ -75,9 +75,12 @@ char* num_to_str(Number n);
 // may fail - either returns false or writes to out
 // the other _from_str functions work the exact same way
 bool num_from_str(char* str, int len, Number* out);
-    bool num_integer_from_str(char* str, int len, Number* out);
-    bool num_rational_from_str(char* str, int len, Number* out);
-    bool num_real_from_str(char* str, int len, Number* out);
+bool num_integer_from_str(char* str, int len, Number* out,
+    uint8_t base);
+bool num_rational_from_str(char* str, int len, Number* out,
+    uint8_t base);
+bool num_real_from_str(char* str, int len, Number* out,
+    uint8_t base);
 
 // conversion between gmp types
 // gmp requires that these functions use out params
@@ -95,20 +98,24 @@ void Q_to_R(mpq_t q, mpfr_t r_out);
 // Q + R = R
 // R + R = R
 
+// if two arguments to an arithmetic function have different bases,
+// the first base will be used for the output
+// 0b1111 + 10 = 0b11010
+
 // arithmetic operators
 
 Number num_add(Number n1, Number n2);
-    void num_add_ZZ_Z(Number n1, Number n2, Number* out);
-    void num_add_ZQ_Q(Number n1, Number n2, Number* out);
-    // void num_add_ZR_R(Number n1, Number n2, Number* out);
+void num_add_ZZ_Z(Number n1, Number n2, Number* out, uint8_t out_base);
+void num_add_ZQ_Q(Number n1, Number n2, Number* out, uint8_t out_base);
+void num_add_ZR_R(Number n1, Number n2, Number* out, uint8_t out_base);
 
-    void num_add_QZ_Q(Number n1, Number n2, Number* out);
-    void num_add_QQ_Q(Number n1, Number n2, Number* out);
-    void num_add_QR_R(Number n1, Number n2, Number* out);
+void num_add_QZ_Q(Number n1, Number n2, Number* out, uint8_t out_base);
+void num_add_QQ_Q(Number n1, Number n2, Number* out, uint8_t out_base);
+void num_add_QR_R(Number n1, Number n2, Number* out, uint8_t out_base);
 
-    // void num_add_RZ_R(Number n1, Number n2, Number* out);
-    // void num_add_RQ_R(Number n1, Number n2, Number* out);
-    void num_add_RR_R(Number n1, Number n2, Number* out);
+void num_add_RZ_R(Number n1, Number n2, Number* out, uint8_t out_base);
+void num_add_RQ_R(Number n1, Number n2, Number* out, uint8_t out_base);
+void num_add_RR_R(Number n1, Number n2, Number* out, uint8_t out_base);
 
 // comparison operators
 
