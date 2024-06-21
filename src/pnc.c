@@ -96,56 +96,6 @@
 
 */
 
-// global vars
-REPLContext ctx = {0};
-
-RT_FnList RT_BUILTIN_FUNCTIONS = {0};
-RT_VarList RT_CONSTANT_VARS = {0};
-ErrorString CPRV_ERROR_NAMES[] = {0};
-
-int main(int argc, char** argv) {
-
-	// round floats to nearest number
-	// mpfr_set_default_rounding_mode(MPFR_RNDN);
-
-	// init runtime variables
-	rt_init();
-
-	// validate args
-
-	bool args_valid = true;
-	if (argc != 1
-	|| (argc == 3 && strcmp(argv[1], "-s") != 0
-		&& strcmp(argv[1], "--string") != 0))
-	{
-		args_valid = false;
-	}
-
-	if (!args_valid) {
-		fprintf(stderr,
-			"USAGE: \n"
-			"\tpnc: enter repl mode\n"
-			"\tpnc [-s|--string] \"<program>\"\n");
-		repl_quit();
-		return 0;
-	}
-
-	bool run_once = (argc == 3);
-	if (run_once) {
-		// if argv == [pnc, -s|--string, "..."], evaluate argv[2]
-		repl_once(argv[2]);
-	} else {
-		// if nothing was passed, start the repl (read from stdin in a loop)
-		ctx.is_running = true;
-		while (ctx.is_running) {
-			repl_once(NULL);
-		}
-	}
-
-	repl_quit();
-	return 0;
-}
-
 TokenList tokenize(char* prog) {
 	TokenList l = tl_new();
 	
@@ -494,21 +444,29 @@ Value eval(Expr* e) {
 		"something bad happened on line %d", __LINE__);
 }
 
-char* stringify_value(Value v) {
-	if (v.type == V_LIST) {
-		return strdup("(...)");
-	} else if (v.type == V_NUM) {
-		return num_to_str(v.number_value);
-	} else {
-		return strdup("none");
-	}
-}
+// char* stringify_value(Value v) {
+// 	if (v.type == V_LIST) {
+// 		return strdup("(...)");
+// 	} else if (v.type == V_NUM) {
+// 		return num_to_str(v.number_value);
+// 	} else {
+// 		return strdup("none");
+// 	}
+// }
 
 char* stringify_value_type(ValueType type) {
 	switch (type) {
 		case V_NUM: return "number";
 		case V_LIST: return "list of numbers";
 		default: return "unknown";
+	}
+}
+
+void print_value(Value v) {
+	switch(v.type) {
+		case V_NUM: num_print(v.number_value); break;
+		// case V_LIST: numlist_print(v.list_value); break;
+		default: printf("(\?\?\?)");
 	}
 }
 
@@ -651,9 +609,12 @@ void eval_pnc_expr(char* input, bool spawn_child_proc) {
 		childproc_return(v);
 	} else {
 		// or main process prints the result
-		char* str = stringify_value(v);
-		printf("= %s\n", str);
-		free(str);
+
+		fputs("= ", stdout);
+		print_value(v);
+		fputc('\n', stdout);
+
+		// free(str);
 	}
 }
 

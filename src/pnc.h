@@ -308,11 +308,13 @@ bool ast_matches_ident(ASTNode* ast, E_Ident* out);
 // uses RT_BUILTIN_FUNCTIONS
 bool ast_matches_funccall(ASTNode* ast, E_FuncCall* out);
 
+// allocates data (can be freed on childproc exit like everything else)
+char* stringify_value(Value v);
+
 // returns a static string literal
 char* stringify_value_type(ValueType type);
 
-// allocates data (can be freed on childproc exit like everything else)
-char* stringify_value(Value v);
+void print_value(Value v);
 
 // called outside of each e_func_***
 void assert_funccall_arg_count_correct(Expr* e);
@@ -458,7 +460,9 @@ extern ErrorString CPRV_ERROR_NAMES[RV_N];
 // print value and exit
 #define childproc_return(v) \
 	do { \
-		printf("= %s\n", stringify_value(v)); \
+		fputs("= ", stdout); \
+		print_value(v); \
+		fputc('\n', stdout); \
 		exit(RV_OK); \
 	} while(0)
 

@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-// basic dynamic string type
+// dynamic string type
 
 typedef struct {
     char* data;

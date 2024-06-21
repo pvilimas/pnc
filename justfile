@@ -2,6 +2,7 @@ all: build run
 
 build:
 	gcc -std=gnu11 -Wall -Wextra \
+		src/main.c \
 		src/pnc.c \
 		src/number.c \
 		src/runtime_functions.c \
